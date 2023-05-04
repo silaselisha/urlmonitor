@@ -3,8 +3,8 @@ const StringDecoder = require('string_decoder').StringDecoder
 
 const handlers = {}
 
-handlers.sample = (data, cb) => {
-    cb(406, {status: 'success', data: {name: 'sample hanlder'}})
+handlers.ping = (data, cb) => {
+    cb(200, {status: 'success', data: {}})
 }
 
 handlers.notFound = (data, cb) => {
@@ -12,7 +12,7 @@ handlers.notFound = (data, cb) => {
 }
 
 const router = {
-    'sample': handlers.sample
+    'ping': handlers.ping
 }
 
 // *** ROUTES HANDLER
