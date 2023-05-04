@@ -19,7 +19,7 @@ const server = http.createServer((req, res) => {
     const method = req.method.toUpperCase()
 
     // ** Retrieve HTTP Request Headers
-    const header = req.headers
+    const headers = req.headers
 
     // ! Handling Payload
     const decoder = new stringDecoder('utf-8')
@@ -30,11 +30,44 @@ const server = http.createServer((req, res) => {
 
     req.on('end', () => {
         buffer += decoder.end()
+        const choosenHandler = router[path] !== undefined ? router[path] : handlers.notFound
+        
+        console.log(choosenHandler)
+        const data = {
+            headers,
+            method,
+            'pathname': path,
+            buffer,
+            queryParams
+        }
 
-        res.end('Hello, World!\n')
-        console.log(path, method, parsedUrl, queryParams, header, buffer)
+        choosenHandler(data, (statusCode, payload) => {
+            statusCode = typeof(statusCode) === 'number' ? statusCode : 200
+            payload = typeof(payload) === 'object' ? payload : {}
+
+            res.setHeader('Content-Type', 'application/json')
+            res.writeHead(statusCode)
+            res.end(JSON.stringify(payload))
+            console.log(`statusCode: ${statusCode} & payload: ${payload}`)
+        })
+
     })
 }) 
+
+// ** ROUTING HANDLERS
+const handlers = {}
+
+handlers.sample = function(data, cb) {
+    cb(406, {status: 'success', data: {name: 'sample route'}})
+}
+
+handlers.notFound = function(data, cb) {
+    cb(404)
+}
+
+const router = {
+    'sample': handlers.sample
+}
 
 // *** Listening to server at port :3000
 server.listen(3000, () => {
