@@ -5,7 +5,6 @@ const http = require('http')
 const https = require('https')
 const enVariables = require('./config')
 const routesHandler = require('./controllers/index')
-const _data = require('./lib/data')
 
 
 // ** HTTPS options

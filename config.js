@@ -4,13 +4,15 @@ const container = {}
 // ** Staging Environment Variables
 container.staging = {
     'port': 3000,
-    'env': 'staging'
+    'env': 'staging',
+    'secret': 'hashingsha256'
 }
 
 // ** Production Environment Variables
 container.production = {
     'port': 3001,
-    'env': 'production'
+    'env': 'production',
+    'secret': 'hashingsha256'
 }
 
 // ! Determine the environments selected from the terminal
