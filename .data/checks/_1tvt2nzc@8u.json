@@ -1,0 +1,10 @@
+{
+    "id": "_1tvt2nzc@8u",
+    "protocol": "https",
+    "method": "GET",
+    "url": "https://www.twitter.com",
+    "statusCodes": [
+        200,
+        404
+    ]
+}

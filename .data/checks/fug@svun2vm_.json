@@ -1,0 +1,10 @@
+{
+    "id": "fug@svun2vm_",
+    "protocol": "https",
+    "method": "GET",
+    "url": "https://www.google.com",
+    "statusCodes": [
+        200,
+        404
+    ]
+}

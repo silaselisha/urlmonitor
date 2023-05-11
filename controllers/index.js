@@ -1,7 +1,9 @@
+const { Readable, Writable } = require('stream')
 const url = require('url')
 const StringDecoder = require('string_decoder').StringDecoder
 const _data = require('../lib/data')
 const { hashPassword, unmarshal, genereateTokenId } = require('../utils/utils')
+
 
 const handlers = {}
 
@@ -28,6 +30,13 @@ handlers.tokens = (data, cb) => {
         handlers._tokens[data.method](data, cb)
     }else {
         cb(405, {})
+    }
+}
+
+handlers.checks = (data, cb) => {
+    const acceptableMethods = ['POST', 'GET', 'PUT', 'DELETE']
+    if(acceptableMethods.indexOf(data.method) > -1) {
+        handlers._checks[data.method](data, cb)
     }
 }
 
@@ -358,6 +367,149 @@ handlers._tokens.auth = (id, phone, cb) => {
     })
 }
 
+/**
+ * @TODO Handling Checks
+ * @param {*} req 
+ * @param {*} res 
+ */
+handlers._checks = {}
+handlers._checks.POST = (data, cb) => {
+    // ** Data payload 
+    // ** method, url, statusCodes [], protocol
+    const method = typeof(data.payload.method) === 'string' && ['PUT', 'GET', 'POST', 'DELETE'].indexOf(data.payload.method.trim()) > -1 ? data.payload.method.trim() : false
+    const protocol = typeof(data.payload.protocol) === 'string' && ['http', 'https'].indexOf(data.payload.protocol.trim()) > -1 ? data.payload.protocol.trim() : false
+    const url = typeof(data.payload.url.trim()) === 'string' && data.payload.url.trim() !== undefined ? data.payload.url.trim() : false
+    const statusCodes = typeof(data.payload.statusCodes) === 'object' && data.payload.statusCodes instanceof Array ? data.payload.statusCodes : false
+
+    if(method && protocol && url && statusCodes) {
+        const token = data.headers.token
+       
+        _data.read('tokens', token, (err, tokenData) => {
+            if(!err && tokenData) {
+                // ** valid token -> check for the user
+                tokenData = unmarshal(tokenData)
+                const userPhone = tokenData.phone
+                handlers._tokens.auth(tokenData.id, userPhone, (isTokenValid) => {
+                    if(isTokenValid) {
+                        _data.read('users', userPhone, (err, userData) => {
+                            if (!err && userData) {
+                                // ** we have the user
+                                userData = unmarshal(userData)
+                               
+                                const checkId = genereateTokenId(12)
+                                const check = {
+                                    id: checkId,
+                                    protocol: protocol,
+                                    method: method,
+                                    url: `${protocol}://${url}`,
+                                    statusCodes: statusCodes,
+                                    user: userData.id
+                                }
+
+                                _data.create('checks', checkId, check, (err) => {
+                                    if (!err) {
+                                        const userCheck = typeof (userData.check) === 'object' && userData.check instanceof Array ? userData.check : []
+                                        if (userCheck.length >= 5) {
+                                            cb(400, { status: 'fail', data: { message: 'You\'ve reached the max +' + userCheck.length } })
+                                        }else {
+                                            userCheck.push(checkId)
+                                            userData.check = userCheck
+    
+                                            _data.update('users', userData.phoneNumber, userData, (err) => {
+                                                if (!err) {
+                                                    cb(200, { status: 'success', data: { user: userData} })
+                                                } else {
+                                                    cb(400, { status: 'fail', data: { err: err, message: 'couldn\'t save the check\'s data!' } })
+                                                }
+                                            })
+                                        }
+                                    } else {
+                                        cb(400, { status: 'fail', data: { err: err, message: 'couldn\'t save the check\'s data!' } })
+                                    }
+                                })
+                            } else {
+                                cb(404, { status: 'fail', data: { message: 'User not found!', err: err } })
+                            }
+                        })
+                    }else {
+                        cb(403, { status: 'fail', data: { message: 'Unauthorized!' } })
+                    }
+                })
+            }else {
+                cb(400, {status: 'fail', data: {message: 'Invalid token!', err: err}})
+            }
+        })
+    }else {
+        cb(400, {status: 'fail', data: {message: 'Missing required fields'}})
+    }
+}
+
+handlers._checks.GET = (data, cb) => {
+    // ** Get token validate token
+    // ** retrieve data from the checks collections
+    const token = data.headers.token
+    _data.read('tokens', token, (err, tokenData) => {
+        if(!err && tokenData) {
+            tokenData = unmarshal(tokenData)
+            const phone = tokenData.phone
+            handlers._tokens.auth(tokenData.id, phone, (isTokenValid) => {
+                if(isTokenValid) {
+                    // ** authorized users 
+                    // ** retrieve all users data
+                    // ** no query params provides
+                    /*
+                     * @ TODO
+                     -> use the user's phone number to retrieve data from the checks 
+                     collection. Retrieved data should strictly belong to the user
+                     */
+                    _data.read('users', phone, (err, user) => {
+                        if(!err && user) {
+                            // ** successfully read through users collections
+                            user = unmarshal(user)
+                            const checks = []
+                            const sourceStream = new Readable({
+                                read() {
+                                    let checkProcessed = 0;
+                                    user.check.forEach((id) => {
+                                        _data.read('checks', id, (err, check) => {
+                                            if(!err && check) {
+                                                this.push(check)
+                                            }
+                                            checkProcessed++
+                                            if(checkProcessed === user.check.length){
+                                                this.push(null)
+                                            }
+                                        })
+                                    })
+
+                                }
+                            })
+                            const destinationStream = new Writable({
+                                write(chunk, encoding, cb) {
+                                    checks.push(JSON.parse(String(chunk)))
+                                    cb()
+                                }
+                            })
+                            
+                            destinationStream.on('finish', () => {
+                                cb(200, { status: 'success', result: checks.length, data: { checks} })
+                            })
+                            
+                            sourceStream.pipe(destinationStream)
+                        }else {
+                            cb(400, {status: 'fail', data: {message: 'Couldn\'t retreive user\'s data!', err: err}})
+                        }
+                    })
+                }else {
+                    cb(403, {status: 'fail', data: { message: 'Unauthorized!'}})
+                }
+            })
+        }else {
+            cb(400, {status: 'fail', data: {message: 'Invalid token!', err: err}})
+        }
+    })
+}
+
 // *** ROUTES HANDLER
 const routesHandler = (req, res) => {
     // ** sanitize the incomming request URL
@@ -410,7 +562,8 @@ const routesHandler = (req, res) => {
 const router = {
     'ping': handlers.ping,
     'users': handlers.users,
-    'tokens': handlers.tokens
+    'tokens': handlers.tokens,
+    'checks': handlers.checks
 }
 
 module.exports = routesHandler
